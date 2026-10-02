@@ -9,6 +9,7 @@
 :root{--bg:#123c69;--fg:#fff;--soft:rgba(255,255,255,.16);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 html{scroll-padding-top:env(safe-area-inset-top,0px);height:100%}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0;height:100%;font-family:'Bricolage Grotesque',system-ui,sans-serif;background:var(--bg);color:var(--fg);transition:background .3s;overflow:hidden;-webkit-tap-highlight-color:transparent}
 #app{height:100%;display:flex;flex-direction:column;max-width:520px;margin:0 auto;padding:12px 18px 14px}
 #top{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:14px}
@@ -30,6 +31,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 dialog h2{margin:0 0 8px;font-size:22px}
 dialog p{margin:8px 0;line-height:1.45;font-size:15px}
 textarea{width:100%;height:110px;border:2px solid #cfd6df;border-radius:12px;padding:10px;font:inherit;font-size:16px;resize:none}
+input#adminKey{width:100%;border:2px solid #cfd6df;border-radius:12px;padding:10px;font:inherit;font-size:16px}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
 .chips button{background:#eaeff5;color:#123c69;padding:7px 12px}
 .chips button[aria-pressed=true]{background:#123c69;color:#fff}
@@ -55,7 +57,7 @@ textarea{width:100%;height:110px;border:2px solid #cfd6df;border-radius:12px;pad
   </div>
   <div id="bottom">
     <label class="sw"><input type="checkbox" id="bible"> Show Bible verses</label>
-    <div class="row"><button id="share">Share yours</button></div>
+    <div class="row"><button id="review" hidden>Review</button><button id="share">Share yours</button></div>
   </div>
 </div>
 
@@ -68,6 +70,24 @@ textarea{width:100%;height:110px;border:2px solid #cfd6df;border-radius:12px;pad
   <div id="warn" class="warn" hidden></div>
   <p id="note" style="font-size:13px;color:#5a6575"></p>
   <div class="act"><button id="cancel">Cancel</button><button class="go" id="post">Post message</button></div>
+</dialog>
+
+<dialog id="dAdminAuth">
+  <h2>Moderator access</h2>
+  <p>Enter your moderator key to review messages and post as an admin.</p>
+  <form id="adminAuthForm">
+    <input id="adminKey" type="password" autocomplete="current-password" placeholder="Moderator key" aria-label="Moderator key" required>
+    <p id="adminAuthStatus" role="status"></p>
+    <div class="act"><button id="cancelAdminAuth" type="button">Cancel</button><button class="go" type="submit">Continue</button></div>
+  </form>
+</dialog>
+
+<dialog id="dReview">
+  <h2>Messages waiting</h2>
+  <p id="revStatus" role="status"></p>
+  <p id="revEmpty">Nothing to review right now.</p>
+  <div id="revList"></div>
+  <div class="act"><button class="go" id="closeRev">Close</button></div>
 </dialog>
 
 <div id="toast" role="status" hidden></div>
@@ -115,8 +135,10 @@ const BASE=[
 const COLORS=[["#123c69","#fff"],["#2f7d6b","#fff"],["#5b4b9a","#fff"],["#f2b134","#1b1b1b"],["#b83a5b","#fff"],["#1f6f8b","#fff"]];
 const TAGS=["Exams","Money","Family","Lonely","Pressure","Other"];
 const CRISIS=/(kill myself|suicid|end my life|self.?harm|hurt myself|want to die|magpakamatay|ayoko nang mabuhay|patayin ko sarili)/i;
-let community=[],cards=[],i=0,tag="";
+let community=[],cards=[],i=0,tag="",moderatorToken="",pending=[],authAction="";
 const $=id=>document.getElementById(id);
+const adminMode=new URLSearchParams(location.search).get("admin")==="1";
+if(adminMode)$("review").hidden=false;
 function store(k,v){try{if(v===undefined)return JSON.parse(localStorage.getItem(k));localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}}
 $("bible").checked=store("lk-bible")!==false;
 
@@ -145,21 +167,108 @@ $("help").onclick=()=>$("dHelp").showModal();$("closeHelp").onclick=()=>$("dHelp
 
 TAGS.forEach(t=>{const b=document.createElement("button");b.textContent=t;b.setAttribute("aria-pressed","false");
   b.onclick=()=>{tag=tag===t?"":t;[...$("chips").children].forEach(x=>x.setAttribute("aria-pressed",x.textContent===tag))};$("chips").appendChild(b)});
-$("share").onclick=()=>{$("warn").hidden=true;$("note").textContent="Messages are reviewed before they appear to everyone. Do not include names or contact details.";$("dShare").showModal()};
+function openShare(){
+  $("warn").hidden=true;
+  $("note").textContent=moderatorToken?"Your message will be published immediately.":"Messages are reviewed before they appear to everyone. Do not include names or contact details.";
+  $("dShare").showModal();
+}
+$("share").onclick=()=>{if(adminMode&&!moderatorToken)openAdminAuth("share");else openShare()};
 $("cancel").onclick=()=>$("dShare").close();
 $("txt").oninput=()=>{$("cnt").textContent=$("txt").value.length+" / 140"};
 $("post").onclick=async()=>{
   const t=$("txt").value.trim();
   if(t.length<10){$("warn").hidden=false;$("warn").textContent="Write at least 10 characters.";return}
   if(CRISIS.test(t)){$("warn").hidden=false;$("warn").textContent="This sounds heavy, and it matters more than a post. Please call the NCMH Crisis Hotline at 1553 or 0917-899-8727, or tell someone you trust. Tap \"Need to talk to someone?\" for more lines.";return}
+  let approved=false;
   try{
-    const response=await fetch("/.netlify/functions/quotes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t,tag})});
-    if(!response.ok)throw new Error("Submission failed");
-  }catch(e){$("warn").hidden=false;$("warn").textContent="Could not submit. Please try again later.";return}
+    const headers={"Content-Type":"application/json"};
+    if(moderatorToken)headers.Authorization=`Bearer ${moderatorToken}`;
+    const response=await fetch("/.netlify/functions/quotes",{method:"POST",headers,body:JSON.stringify({text:t,tag})});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||"Submission failed");
+    approved=Boolean(data.approved);
+  }catch(e){$("warn").hidden=false;$("warn").textContent=e.message||"Could not submit. Please try again later.";return}
   $("txt").value="";$("cnt").textContent="0 / 140";tag="";[...$("chips").children].forEach(x=>x.setAttribute("aria-pressed","false"));
-  $("dShare").close();build();
+  $("dShare").close();
+  if(approved){toast("Message published.");await loadCommunity()}
+  else{toast("Message sent for review.");build()}
 };
   let tt;function toast(m){const e=$("toast");e.textContent=m;e.hidden=false;clearTimeout(tt);tt=setTimeout(()=>e.hidden=true,3500)}
+
+function openAdminAuth(action){
+  authAction=action;
+  $("adminKey").value="";
+  $("adminAuthStatus").textContent="";
+  $("dAdminAuth").showModal();
+  $("adminKey").focus();
+}
+$("cancelAdminAuth").onclick=()=>$("dAdminAuth").close();
+$("adminAuthForm").onsubmit=async event=>{
+  event.preventDefault();
+  const token=$("adminKey").value.trim();
+  if(!token)return;
+  $("adminAuthStatus").textContent="Checking key...";
+  try{
+    const response=await fetch("/.netlify/functions/moderate-quotes",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||"Could not verify moderator key.");
+    moderatorToken=token;
+    pending=(data.items||[]).map(item=>({id:item.id,t:item.text,tag:item.tag,ts:item.ts}));
+    $("dAdminAuth").close();
+    if(authAction==="review"){
+      renderReview();
+      $("dReview").showModal();
+    }else openShare();
+  }catch(error){
+    $("adminAuthStatus").textContent=error.message||"Could not verify moderator key.";
+  }
+};
+$("review").onclick=()=>{
+  if(!moderatorToken){openAdminAuth("review");return}
+  $("dReview").showModal();
+  loadPending();
+};
+$("closeRev").onclick=()=>$("dReview").close();
+function renderReview(){
+  const list=$("revList");
+  list.replaceChildren();
+  $("revEmpty").hidden=pending.length>0;
+  pending.forEach(item=>{
+    const card=document.createElement("div");card.className="it";
+    const text=document.createElement("div");text.textContent=item.t;card.appendChild(text);
+    const topic=document.createElement("small");topic.textContent=item.tag?`About ${item.tag.toLowerCase()}`:"No topic";card.appendChild(topic);
+    const actions=document.createElement("div");actions.className="act";
+    const reject=document.createElement("button");reject.textContent="Reject";reject.onclick=()=>moderate(item.id,"reject");
+    const approve=document.createElement("button");approve.className="go";approve.textContent="Approve";approve.onclick=()=>moderate(item.id,"approve");
+    actions.append(reject,approve);card.appendChild(actions);list.appendChild(card);
+  });
+  $("revStatus").textContent=pending.length?`${pending.length} message${pending.length===1?"":"s"} waiting for review.`:"Nothing to review right now.";
+}
+async function loadPending(){
+  $("revStatus").textContent="Loading messages...";
+  try{
+    const response=await fetch("/.netlify/functions/moderate-quotes",{headers:{Authorization:`Bearer ${moderatorToken}`},cache:"no-store"});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||"Could not load messages.");
+    pending=(data.items||[]).map(item=>({id:item.id,t:item.text,tag:item.tag,ts:item.ts}));
+    renderReview();
+  }catch(error){
+    pending=[];renderReview();
+    $("revStatus").textContent=error.message||"Could not load messages.";
+  }
+}
+async function moderate(id,action){
+  $("revStatus").textContent=action==="approve"?"Approving message...":"Rejecting message...";
+  try{
+    const response=await fetch("/.netlify/functions/moderate-quotes",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${moderatorToken}`},body:JSON.stringify({id,action})});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||"Could not update message.");
+    await loadPending();
+    if(action==="approve")await loadCommunity();
+  }catch(error){
+    $("revStatus").textContent=error.message||"Could not update message.";
+  }
+}
 
 async function loadCommunity(){
   try{

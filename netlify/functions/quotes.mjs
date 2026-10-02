@@ -35,6 +35,11 @@ export default async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
   try {
+    const authorization = request.headers.get("authorization");
+    const moderatorToken = process.env.QUOTE_MODERATOR_TOKEN;
+    const isModerator = Boolean(moderatorToken) && authorization === `Bearer ${moderatorToken}`;
+    if (authorization && !isModerator) return json({ error: "Invalid moderator key." }, 401);
+
     const body = await request.json();
     const text = typeof body.text === "string" ? body.text.trim() : "";
     const tag = allowedTags.has(body.tag) ? body.tag : "";
@@ -42,9 +47,10 @@ export default async (request) => {
     if (crisisPattern.test(text)) return json({ error: "This message needs support, not a public post. Please contact someone you trust or a crisis hotline." }, 400);
 
     const item = { id: randomUUID(), text, tag, ts: Date.now() };
-    await store.setJSON(`pending:${item.id}`, item);
-    return json({ ok: true }, 201);
-  } catch {
-    return json({ error: "Could not submit this quote." }, 400);
+  await store.setJSON(`${isModerator ? "approved" : "pending"}:${item.id}`, item);
+  return json({ ok: true, approved: isModerator }, 201);
+  } catch (error) {
+    console.error("Quote submission failed:", error);
+    return json({ error: "Could not submit this quote." }, 500);
   }
 };

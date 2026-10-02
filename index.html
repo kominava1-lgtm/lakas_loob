@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lakas-Loob: quotes to keep going</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#123c69;--fg:#fff;--soft:rgba(255,255,255,.16);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px);height:100%}
+*{box-sizing:border-box}
+body{margin:0;height:100%;font-family:'Bricolage Grotesque',system-ui,sans-serif;background:var(--bg);color:var(--fg);transition:background .3s;overflow:hidden;-webkit-tap-highlight-color:transparent}
+#app{height:100%;display:flex;flex-direction:column;max-width:520px;margin:0 auto;padding:12px 18px 14px}
+#top{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:14px}
+button{font:inherit;color:inherit;background:var(--soft);border:0;border-radius:999px;padding:9px 14px;cursor:pointer}
+button:focus-visible,textarea:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
+input:focus-visible{outline:3px solid #123c69;outline-offset:2px}
+#stage{flex:1;display:flex;flex-direction:column;justify-content:center;position:relative;min-height:0}
+#tapL,#tapR{position:absolute;top:0;bottom:0;width:50%;border-radius:0;background:none;padding:0}
+#tapL{left:0}#tapR{right:0}
+#q{font-size:clamp(28px,8vw,40px);line-height:1.15;font-weight:800;margin:0;pointer-events:none;overflow-wrap:anywhere}
+#src{margin:16px 0 0;font-size:14px;opacity:.8;pointer-events:none}
+#verse{margin:22px 0 0;padding-top:14px;border-top:1px solid var(--soft);font-size:15px;line-height:1.45;pointer-events:none}
+#verse b{display:block;font-weight:600;opacity:.8;margin-top:4px}
+#bottom{display:flex;gap:8px;justify-content:space-between;align-items:center;font-size:14px}
+#bottom .row{display:flex;gap:8px;align-items:center}
+label.sw{display:flex;gap:8px;align-items:center;cursor:pointer}
+dialog{border:0;border-radius:20px;padding:20px;width:min(92vw,440px);background:#fff;color:#1b1b1b;font-family:inherit}
+dialog::backdrop{background:rgba(0,0,0,.55)}
+dialog h2{margin:0 0 8px;font-size:22px}
+dialog p{margin:8px 0;line-height:1.45;font-size:15px}
+textarea{width:100%;height:110px;border:2px solid #cfd6df;border-radius:12px;padding:10px;font:inherit;font-size:16px;resize:none}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.chips button{background:#eaeff5;color:#123c69;padding:7px 12px}
+.chips button[aria-pressed=true]{background:#123c69;color:#fff}
+.act{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+.act .go{background:#123c69;color:#fff}.act button{background:#eaeff5;color:#123c69}.act .go{background:#123c69;color:#fff}
+#cnt{font-size:12px;color:#5a6575}
+.warn{background:#fff3d6;border-radius:12px;padding:10px 12px}
+#toast{position:fixed;left:50%;bottom:calc(70px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:#fff;color:#1b1b1b;padding:10px 16px;border-radius:999px;font-size:14px;max-width:90vw}
+.it{border:1px solid #d8dee7;border-radius:12px;padding:10px;margin:8px 0;font-size:15px}
+.it small{display:block;color:#5a6575;margin:4px 0 8px}
+.it .fl{background:#fff3d6;border-radius:8px;padding:4px 8px;font-size:13px;margin-bottom:6px}
+.it .act{margin-top:6px}
+@media(prefers-reduced-motion:reduce){body{transition:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="top"><strong>Lakas-Loob</strong><button id="help">Need to talk to someone?</button></div>
+  <div id="stage">
+    <p id="q"></p><p id="src"></p><div id="verse" hidden></div>
+    <button id="tapL" aria-label="Previous quote"></button>
+    <button id="tapR" aria-label="Next quote"></button>
+  </div>
+  <div id="bottom">
+    <label class="sw"><input type="checkbox" id="bible"> Show Bible verses</label>
+    <div class="row"><button id="rev">Review</button><button id="share">Share yours</button></div>
+  </div>
+</div>
+
+<dialog id="dShare">
+  <h2>Share a message</h2>
+  <p>Write something you wish someone had told you. Others who feel the same may need it. Do not include names or contact details.</p>
+  <textarea id="txt" maxlength="140" placeholder="Example: Failing one exam doesn't mean you're failing at life."></textarea>
+  <div id="cnt">0 / 140</div>
+  <div class="chips" id="chips" role="group" aria-label="What is it about?"></div>
+  <div id="warn" class="warn" hidden></div>
+  <p id="note" style="font-size:13px;color:#5a6575"></p>
+  <div class="act"><button id="cancel">Cancel</button><button class="go" id="post">Post message</button></div>
+</dialog>
+
+<dialog id="dReview">
+  <h2>Messages waiting</h2>
+  <p>Moderator access</p>
+  <input id="modToken" type="password" autocomplete="current-password" placeholder="Moderator key" aria-label="Moderator key">
+  <div class="act"><button id="loadPending">Load pending messages</button></div>
+  <p id="revStatus" role="status"></p>
+  <p id="revEmpty">Nothing to review right now.</p>
+  <div id="revList"></div>
+  <div class="act"><button class="go" id="closeRev">Close</button></div>
+</dialog>
+<div id="toast" role="status" hidden></div>
+
+<dialog id="dHelp">
+  <h2>You are not alone</h2>
+  <p>If you feel unsafe or are thinking of hurting yourself, please contact someone now. These lines are free and open 24/7.</p>
+  <p><b>NCMH Crisis Hotline</b><br>1553 (landline, toll-free)<br>0917-899-8727 or 0966-351-4518</p>
+  <p><b>Hopeline PH</b><br>2919 (Globe/TM, toll-free)<br>0917-558-4673</p>
+  <p>You can also tell a parent, teacher, or guidance counselor you trust.</p>
+  <div class="act"><button class="go" id="closeHelp">Close</button></div>
+</dialog>
+
+<script>
+const BASE=[
+["You don't have to be the best today. Showing up is enough.","Galatians 6:9","And let us not be weary in well doing: for in due season we shall reap, if we faint not."],
+["Being behind is not the same as being unable. Start where you are.","Philippians 4:13","I can do all things through Christ which strengtheneth me."],
+["Tired is not failing. Rest, then try again.","Matthew 11:28","Come unto me, all ye that labour and are heavy laden, and I will give you rest."],
+["Your worth is not your grade.","Psalm 139:14","I will praise thee; for I am fearfully and wonderfully made."],
+["You are not the only one who feels this way.","Psalm 34:18","The LORD is nigh unto them that are of a broken heart."],
+["Fear is loud, but it doesn't get the final say.","Isaiah 41:10","Fear thou not; for I am with thee: be not dismayed."],
+["Small steps still count as steps.","Zechariah 4:10","For who hath despised the day of small things?"],
+["Asking for help is a skill, not a weakness.","Ecclesiastes 4:9","Two are better than one; because they have a good reward for their labour."],
+["Hard days end. Keep going.","Psalm 30:5","Weeping may endure for a night, but joy cometh in the morning."],
+["Be brave enough to try again tomorrow.","Joshua 1:9","Be strong and of a good courage; be not afraid, neither be thou dismayed."],
+["Failing one exam doesn't mean you're failing at life.","Proverbs 24:16","For a just man falleth seven times, and riseth up again."],
+["Your pace is yours. Don't borrow someone else's timeline.","Jeremiah 29:11","For I know the thoughts that I think toward you, saith the LORD, thoughts of peace, and not of evil."],
+["Rest is part of the work, not a reward for finishing it.","Isaiah 40:31","They shall run, and not be weary; and they shall walk, and not faint."],
+["It's okay to not be okay. It's not okay to stay alone with it.","1 Peter 5:7","Casting all your care upon him; for he careth for you."],
+["Your family's hopes are heavy. You don't have to carry them perfectly.","Psalm 55:22","Cast thy burden upon the LORD, and he shall sustain thee."],
+["Money is tight, but your potential is not.","Proverbs 16:3","Commit thy works unto the LORD, and thy thoughts shall be established."],
+["A bad day is not a bad life.","Lamentations 3:23","They are new every morning: great is thy faithfulness."],
+["You've survived every hard day so far. That's a perfect record.","Psalm 46:1","God is our refuge and strength, a very present help in trouble."],
+["Feeling anxious means you care. Now take one slow breath.","2 Timothy 1:7","For God hath not given us the spirit of fear; but of power, and of love, and of a sound mind."],
+["Laugh a little today. Even tired people deserve joy.","Proverbs 17:22","A merry heart doeth good like a medicine."],
+["You don't need the whole map. Just the next step.","Proverbs 3:5","Trust in the LORD with all thine heart; and lean not unto thine own understanding."],
+["Mistakes are proof that you're trying.","Micah 7:8","When I fall, I shall arise."],
+["You can't pour from an empty cup. Take care of yourself too.","Psalm 121:1","I will lift up mine eyes unto the hills, from whence cometh my help."],
+["Someone else is going through this too, and getting through it. So can you.","Psalm 27:14","Wait on the LORD: be of good courage, and he shall strengthen thine heart."],
+["Your dreams are not too big. Your steps are just small right now."],
+["Ask. Try. Fail. Learn. Repeat. That is how everyone gets good at anything."],
+["Be kind to yourself. You are still learning."],
+["Progress on a slow day is still progress."]
+];
+const COLORS=[["#123c69","#fff"],["#2f7d6b","#fff"],["#5b4b9a","#fff"],["#f2b134","#1b1b1b"],["#b83a5b","#fff"],["#1f6f8b","#fff"]];
+const TAGS=["Exams","Money","Family","Lonely","Pressure","Other"];
+const CRISIS=/(kill myself|suicid|end my life|self.?harm|hurt myself|want to die|magpakamatay|ayoko nang mabuhay|patayin ko sarili)/i;
+let community=[],cards=[],i=0,tag="",moderatorToken="";
+const $=id=>document.getElementById(id);
+function store(k,v){try{if(v===undefined)return JSON.parse(localStorage.getItem(k));localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}}
+$("bible").checked=store("lk-bible")!==false;
+
+function build(){
+  cards=[];let c=0;
+  BASE.forEach((b,n)=>{cards.push({t:b[0],ref:b[1],v:b[2]});if(n%2===1&&c<community.length){cards.push(Object.assign({community:1},community[c++]))}});
+  while(c<community.length)cards.push(Object.assign({community:1},community[c++]));
+  if(i>=cards.length)i=0;
+  show();
+}
+function show(){
+  const k=cards[i],col=COLORS[i%COLORS.length];
+  document.documentElement.style.setProperty("--bg",col[0]);document.documentElement.style.setProperty("--fg",col[1]);
+  document.documentElement.style.setProperty("--soft",col[1]==="#fff"?"rgba(255,255,255,.2)":"rgba(0,0,0,.15)");
+  $("q").textContent=k.t;
+  $("src").textContent=k.community?("From the community"+(k.tag?" · about "+k.tag.toLowerCase():"")):"";
+  const showV=$("bible").checked&&k.v;
+  $("verse").hidden=!showV;
+  if(showV){$("verse").textContent=k.v;const b=document.createElement("b");b.textContent=k.ref;$("verse").appendChild(b)}
+}
+function go(d){i=(i+d+cards.length)%cards.length;show()}
+$("tapR").onclick=()=>go(1);$("tapL").onclick=()=>go(-1);
+document.addEventListener("keydown",e=>{if(document.querySelector("dialog[open]"))return;if(e.key==="ArrowRight")go(1);if(e.key==="ArrowLeft")go(-1)});
+$("bible").onchange=()=>{store("lk-bible",$("bible").checked);show()};
+$("help").onclick=()=>$("dHelp").showModal();$("closeHelp").onclick=()=>$("dHelp").close();
+
+TAGS.forEach(t=>{const b=document.createElement("button");b.textContent=t;b.setAttribute("aria-pressed","false");
+  b.onclick=()=>{tag=tag===t?"":t;[...$("chips").children].forEach(x=>x.setAttribute("aria-pressed",x.textContent===tag))};$("chips").appendChild(b)});
+$("share").onclick=()=>{$("warn").hidden=true;$("note").textContent="Messages are reviewed before they appear to everyone. Do not include names or contact details.";$("dShare").showModal()};
+$("cancel").onclick=()=>$("dShare").close();
+$("txt").oninput=()=>{$("cnt").textContent=$("txt").value.length+" / 140"};
+$("post").onclick=async()=>{
+  const t=$("txt").value.trim();
+  if(t.length<10){$("warn").hidden=false;$("warn").textContent="Write at least 10 characters.";return}
+  if(CRISIS.test(t)){$("warn").hidden=false;$("warn").textContent="This sounds heavy, and it matters more than a post. Please call the NCMH Crisis Hotline at 1553 or 0917-899-8727, or tell someone you trust. Tap \"Need to talk to someone?\" for more lines.";return}
+  try{
+    const response=await fetch("/.netlify/functions/quotes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t,tag})});
+    if(!response.ok)throw new Error("Submission failed");
+  }catch(e){$("warn").hidden=false;$("warn").textContent="Could not submit. Please try again later.";return}
+  $("txt").value="";$("cnt").textContent="0 / 140";tag="";[...$("chips").children].forEach(x=>x.setAttribute("aria-pressed","false"));
+  $("dShare").close();build();
+};
+  let tt;function toast(m){const e=$("toast");e.textContent=m;e.hidden=false;clearTimeout(tt);tt=setTimeout(()=>e.hidden=true,3500)}
+
+let pending=[];
+function renderRev(){
+  const L=$("revList");L.innerHTML="";$("revEmpty").hidden=pending.length>0;
+  pending.forEach(m=>{
+    const d=document.createElement("div");d.className="it";
+    const p=document.createElement("div");p.textContent=m.t;d.appendChild(p);
+    const sm=document.createElement("small");sm.textContent=m.tag?"About "+m.tag.toLowerCase():"No topic";d.appendChild(sm);
+    const a=document.createElement("div");a.className="act";
+    const rj=document.createElement("button");rj.textContent="Reject";rj.onclick=()=>moderate(m.id,"reject");
+    const ap=document.createElement("button");ap.className="go";ap.textContent="Approve";ap.onclick=()=>moderate(m.id,"approve");
+    a.append(rj,ap);d.appendChild(a);L.appendChild(d);
+  });
+}
+async function loadPending(){
+  $("revStatus").textContent="Loading...";
+  try{
+    const response=await fetch("/.netlify/functions/moderate-quotes",{headers:{Authorization:"Bearer "+moderatorToken},cache:"no-store"});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||"Could not load messages.");
+    pending=(data.items||[]).map(item=>({id:item.id,t:item.text,tag:item.tag,ts:item.ts}));renderRev();$("revStatus").textContent=pending.length?"Review each message before approving.":"No messages are waiting.";
+  }catch(e){pending=[];renderRev();$("revStatus").textContent=e.message||"Could not load messages."}
+}
+async function moderate(id,action){
+  try{
+    const response=await fetch("/.netlify/functions/moderate-quotes",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+moderatorToken},body:JSON.stringify({id,action})});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||"Could not update message.");
+    await loadPending();
+    if(action==="approve")await loadCommunity();
+  }catch(e){$("revStatus").textContent=e.message||"Could not update message."}
+}
+$("rev").onclick=()=>{$("revStatus").textContent="";$("dReview").showModal()};
+$("loadPending").onclick=()=>{moderatorToken=$("modToken").value.trim();if(moderatorToken)loadPending();else $("revStatus").textContent="Enter the moderator key set in Netlify."};
+$("closeRev").onclick=()=>$("dReview").close();
+async function loadCommunity(){
+  try{
+    const response=await fetch("/.netlify/functions/quotes",{cache:"no-store"});
+    if(!response.ok)throw new Error("Feed unavailable");
+    const data=await response.json();
+    community=(data.items||[]).map(item=>({id:item.id,t:item.text,tag:item.tag,community:1})).filter(item=>item.t);
+    build();
+  }catch(e){if(!community.length)build()}
+}
+build();
+loadCommunity();
+setInterval(loadCommunity,30000);
+</script>
+</body>
+</html>

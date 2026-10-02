@@ -55,7 +55,7 @@ textarea{width:100%;height:110px;border:2px solid #cfd6df;border-radius:12px;pad
   </div>
   <div id="bottom">
     <label class="sw"><input type="checkbox" id="bible"> Show Bible verses</label>
-    <div class="row"><button id="rev">Review</button><button id="share">Share yours</button></div>
+    <div class="row"><button id="share">Share yours</button></div>
   </div>
 </div>
 
@@ -70,16 +70,6 @@ textarea{width:100%;height:110px;border:2px solid #cfd6df;border-radius:12px;pad
   <div class="act"><button id="cancel">Cancel</button><button class="go" id="post">Post message</button></div>
 </dialog>
 
-<dialog id="dReview">
-  <h2>Messages waiting</h2>
-  <p>Moderator access</p>
-  <input id="modToken" type="password" autocomplete="current-password" placeholder="Moderator key" aria-label="Moderator key">
-  <div class="act"><button id="loadPending">Load pending messages</button></div>
-  <p id="revStatus" role="status"></p>
-  <p id="revEmpty">Nothing to review right now.</p>
-  <div id="revList"></div>
-  <div class="act"><button class="go" id="closeRev">Close</button></div>
-</dialog>
 <div id="toast" role="status" hidden></div>
 
 <dialog id="dHelp">
@@ -125,7 +115,7 @@ const BASE=[
 const COLORS=[["#123c69","#fff"],["#2f7d6b","#fff"],["#5b4b9a","#fff"],["#f2b134","#1b1b1b"],["#b83a5b","#fff"],["#1f6f8b","#fff"]];
 const TAGS=["Exams","Money","Family","Lonely","Pressure","Other"];
 const CRISIS=/(kill myself|suicid|end my life|self.?harm|hurt myself|want to die|magpakamatay|ayoko nang mabuhay|patayin ko sarili)/i;
-let community=[],cards=[],i=0,tag="",moderatorToken="";
+let community=[],cards=[],i=0,tag="";
 const $=id=>document.getElementById(id);
 function store(k,v){try{if(v===undefined)return JSON.parse(localStorage.getItem(k));localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}}
 $("bible").checked=store("lk-bible")!==false;
@@ -171,40 +161,6 @@ $("post").onclick=async()=>{
 };
   let tt;function toast(m){const e=$("toast");e.textContent=m;e.hidden=false;clearTimeout(tt);tt=setTimeout(()=>e.hidden=true,3500)}
 
-let pending=[];
-function renderRev(){
-  const L=$("revList");L.innerHTML="";$("revEmpty").hidden=pending.length>0;
-  pending.forEach(m=>{
-    const d=document.createElement("div");d.className="it";
-    const p=document.createElement("div");p.textContent=m.t;d.appendChild(p);
-    const sm=document.createElement("small");sm.textContent=m.tag?"About "+m.tag.toLowerCase():"No topic";d.appendChild(sm);
-    const a=document.createElement("div");a.className="act";
-    const rj=document.createElement("button");rj.textContent="Reject";rj.onclick=()=>moderate(m.id,"reject");
-    const ap=document.createElement("button");ap.className="go";ap.textContent="Approve";ap.onclick=()=>moderate(m.id,"approve");
-    a.append(rj,ap);d.appendChild(a);L.appendChild(d);
-  });
-}
-async function loadPending(){
-  $("revStatus").textContent="Loading...";
-  try{
-    const response=await fetch("/.netlify/functions/moderate-quotes",{headers:{Authorization:"Bearer "+moderatorToken},cache:"no-store"});
-    const data=await response.json();
-    if(!response.ok)throw new Error(data.error||"Could not load messages.");
-    pending=(data.items||[]).map(item=>({id:item.id,t:item.text,tag:item.tag,ts:item.ts}));renderRev();$("revStatus").textContent=pending.length?"Review each message before approving.":"No messages are waiting.";
-  }catch(e){pending=[];renderRev();$("revStatus").textContent=e.message||"Could not load messages."}
-}
-async function moderate(id,action){
-  try{
-    const response=await fetch("/.netlify/functions/moderate-quotes",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+moderatorToken},body:JSON.stringify({id,action})});
-    const data=await response.json();
-    if(!response.ok)throw new Error(data.error||"Could not update message.");
-    await loadPending();
-    if(action==="approve")await loadCommunity();
-  }catch(e){$("revStatus").textContent=e.message||"Could not update message."}
-}
-$("rev").onclick=()=>{$("revStatus").textContent="";$("dReview").showModal()};
-$("loadPending").onclick=()=>{moderatorToken=$("modToken").value.trim();if(moderatorToken)loadPending();else $("revStatus").textContent="Enter the moderator key set in Netlify."};
-$("closeRev").onclick=()=>$("dReview").close();
 async function loadCommunity(){
   try{
     const response=await fetch("/.netlify/functions/quotes",{cache:"no-store"});
